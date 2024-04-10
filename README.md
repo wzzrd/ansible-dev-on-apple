@@ -14,3 +14,5 @@ Copy `inventory.tmpl` to `inventory` and adapt it to your situation (mainly chan
 ```bash
 ansible-playbook setup.yml
 ```
+
+Accompanying blog: https://100things.wzzrd.com/2024/04/04/Developing-Ansible-Automation-Content-on-Apple-Silicon.html
