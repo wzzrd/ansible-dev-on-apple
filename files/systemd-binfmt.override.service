@@ -1,0 +1,4 @@
+[Service]
+ExecStartPre=/usr/bin/test -f /mnt/lima-rosetta/rosetta
+RestartSec=10m
+Restart=on-failure

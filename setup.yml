@@ -1,0 +1,160 @@
+---
+# file: setup.yml
+- name: Base configuration
+  hosts: all
+  become: true
+  gather_facts: false
+
+  pre_tasks:
+    - name: Gather subset of facts
+      ansible.builtin.setup:
+        gather_subset:
+          - '!all'
+      tags:
+        - facts
+
+    - name: Copy over requirements.txt
+      ansible.builtin.copy:
+        src: requirements.txt
+        dest: /home/{{ user }}.linux/requirements.txt
+        owner: "{{ user }}"
+        mode: "0644"
+      tags:
+        - pip
+
+    - name: Gather package facts
+      ansible.builtin.package_facts:
+
+    - name: Install base packages
+      ansible.builtin.dnf:
+        name: "{{ item }}"
+        state: installed
+      loop:
+        - git
+        - mc
+        - vim-enhanced
+        - python3
+        - python3-virtualenvwrapper
+        - glibc-langpack-en
+        - wget
+        - policycoreutils
+      when: "item not in ansible_facts.packages"
+      tags:
+        - packages
+
+    - name: Create virtualenv for Ansible
+      ansible.builtin.shell:
+        cmd: . /usr/bin/virtualenvwrapper.sh && mkvirtualenv ansible
+        creates: /home/{{ user }}.linux/.virtualenvs/ansible
+      become_user: "{{ user }}"
+      tags:
+        - virtualenv
+
+  roles:
+    - role: fedora.linux_system_roles.timesync
+      vars:
+        timesync_ntp_servers:
+          - hostname: time.kpn.net
+      tags:
+        - sysconfig
+
+    - role: haxorof.docker_ce
+      tags:
+        - packages
+        - docker
+
+    - role: cchurch.virtualenv
+      vars:
+        virtualenv_user: "{{ user }}"
+        virtualenv_path: /home/{{ user }}.linux/.virtualenvs/ansible
+        virtualenv_requirements: /home/{{ user }}.linux/requirements.txt
+      tags:
+        - virtualenv
+        - pip
+
+  post_tasks:
+    - name: Add my user to docker group
+      ansible.builtin.user:
+        name: "{{ user }}"
+        groups: docker
+        append: true
+      notify:
+        - Reboot machine
+      tags:
+        - user
+        - docker
+
+    - name: Create Rosetta binfmt configuration file
+      ansible.builtin.copy:
+        src: files/rosetta.conf
+        dest: /usr/lib/binfmt.d/rosetta.conf
+        owner: root
+        group: root
+        mode: "0644"
+      tags:
+        - binfmt
+
+    - name: Copy over Rosetta SELinux module
+      ansible.builtin.copy:
+        src: "files/{{ ansible_distribution }}-\
+              {{ ansible_distribution_major_version }}\
+              /rosetta.pp"
+        dest: /root/rosetta.pp
+        owner: root
+        group: root
+        mode: "0644"
+      tags:
+        - binfmt
+
+    - name: Check loaded SELinux modules
+      ansible.builtin.command:
+        cmd: semodule -l
+      register: selinux_modules
+      changed_when: false
+      tags:
+        - selinux
+
+    - name: Load Rosetta SELinux module
+      ansible.builtin.command:
+        cmd: semodule -i /root/rosetta.pp
+      when: "'rosetta' not in selinux_modules.stdout"
+      changed_when: "'rosetta' not in selinux_modules.stdout"
+      tags:
+        - selinux
+
+    - name: Create systemd-binfmt.service.d directory
+      ansible.builtin.file:
+        path: /etc/systemd/system/systemd-binfmt.service.d/
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+      tags:
+        - binfmt
+
+    - name: Copy systemd-binfmt.service drop-in
+      ansible.builtin.copy:
+        src: systemd-binfmt.override.service
+        dest: /etc/systemd/system/systemd-binfmt.service.d/override.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+      tags:
+        - binfmt
+
+    - name: Enable systemd-binfmt
+      ansible.builtin.service:
+        name: systemd-binfmt
+        enabled: true
+      tags:
+        - binfmt
+
+  handlers:
+    - name: Reboot machine
+      ansible.builtin.reboot:
+
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true

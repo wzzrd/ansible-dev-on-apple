@@ -1,0 +1,8 @@
+*.retry
+.cache
+.vscode
+.envrc
+roles/
+venv/
+ansible.cfg
+inventory

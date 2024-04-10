@@ -1,0 +1,11 @@
+collections:
+  - name: community.general
+    version: 8.2.0
+  - name: fedora.linux_system_roles
+    version: 1.75.0
+
+roles:
+  - name: haxorof.docker_ce
+    version: 5.0.3
+  - name: cchurch.virtualenv
+    version: 0.6.5
