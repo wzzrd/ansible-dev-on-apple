@@ -35,6 +35,7 @@
         name: "{{ item }}"
         state: present
       loop:
+        - direnv
         - git
         - mc
         - vim-enhanced
