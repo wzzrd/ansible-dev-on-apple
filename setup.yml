@@ -10,15 +10,17 @@
       ansible.builtin.setup:
         gather_subset:
           - '!all'
+      become: false
       tags:
         - facts
 
     - name: Copy over requirements.txt
       ansible.builtin.copy:
         src: requirements.txt
-        dest: /home/{{ user }}.linux/requirements.txt
-        owner: "{{ user }}"
+        dest: "{{ ansible_user_dir }}/requirements.txt"
+        owner: "{{ ansible_user_id }}"
         mode: "0644"
+      become: false
       tags:
         - pip
 
@@ -33,7 +35,7 @@
     - name: Install base packages
       ansible.builtin.dnf:
         name: "{{ item }}"
-        state: present
+        state: installed
       loop:
         - direnv
         - git
@@ -42,18 +44,20 @@
         - python3
         - python3-virtualenvwrapper
         - glibc-langpack-en
-        - wget2-wget
-        - policycoreutils
+        - glibc-langpack-nl
+        - wget2
       when: "item not in ansible_facts.packages"
       tags:
         - packages
 
-    - name: Remove unwanted
+    - name: Remove unwanted packages
       ansible.builtin.dnf:
-        name: "{{ item }}"
+       name: "{{ item }}"
         state: absent
       loop:
         - podman
+        - buildah
+        - skopeo
       when: "item in ansible_facts.packages"
       tags:
         - packages
@@ -61,8 +65,8 @@
     - name: Create virtualenv for Ansible
       ansible.builtin.shell:
         cmd: . /usr/bin/virtualenvwrapper.sh && mkvirtualenv ansible
-        creates: /home/{{ user }}.linux/.virtualenvs/ansible
-      become_user: "{{ user }}"
+        creates: "{{ ansible_user_dir }}/.virtualenvs/ansible"
+      become: false
       tags:
         - virtualenv
 
@@ -77,28 +81,26 @@
     - role: haxorof.docker_ce
       tags:
         - packages
-        - docker
 
     - role: cchurch.virtualenv
       vars:
-        virtualenv_user: "{{ user }}"
-        virtualenv_path: /home/{{ user }}.linux/.virtualenvs/ansible
-        virtualenv_requirements: /home/{{ user }}.linux/requirements.txt
+        virtualenv_user: "{{ ansible_user_id }}"
+        virtualenv_path: "{{ ansible_user_dir }}/venv"
+        virtualenv_requirements: "{{ ansible_user_dir }}/requirements.txt"
+      become: false
       tags:
-        - virtualenv
         - pip
 
   post_tasks:
     - name: Add my user to docker group
       ansible.builtin.user:
-        name: "{{ user }}"
+        name: "{{ ansible_user_id }}"
         groups: docker
         append: true
       notify:
         - Reboot machine
       tags:
         - user
-        - docker
 
     - name: Create Rosetta binfmt configuration file
       ansible.builtin.copy:
@@ -112,33 +114,39 @@
 
     - name: Copy over Rosetta SELinux module
       ansible.builtin.copy:
-        src: "files/{{ ansible_distribution }}/rosetta.te"
+        src: "{{ lookup('first_found', selinux_te_files) }}"
         dest: /root/rosetta.te
         owner: root
         group: root
         mode: "0644"
+      vars:
+        selinux_te_files:
+          - "{{ ansible_distribution }}-{{ ansible_distribution_major_version }}/rosetta.te"
+          - "{{ ansible_distribution }}/rosetta.te"
+          - "{{ ansible_os_family }}/rosetta.te"
       tags:
         - binfmt
-
-    - name: Check loaded SELinux modules
-      ansible.builtin.command:
-        cmd: semodule -l
-      register: selinux_modules
-      changed_when: false
-      tags:
         - selinux
 
-    - name: Make SELinux policy module
+    - name: Convert SELinux type enforcement file to policy file
       ansible.builtin.command:
         cmd: checkmodule -M -m -o /root/rosetta.mod /root/rosetta.te
         creates: /root/rosetta.mod
       tags:
         - selinux
 
-    - name: Compile SELinux module
+    - name: Compile SELinux policy file to policy package
       ansible.builtin.command:
         cmd: semodule_package -o /root/rosetta.pp -m /root/rosetta.mod
         creates: /root/rosetta.pp
+      tags:
+        - selinux
+
+    - name: Check loaded SELinux modules
+      ansible.builtin.command:
+        cmd: semodule -l
+      register: selinux_modules
+      changed_when: false
       tags:
         - selinux
 
