@@ -14,6 +14,24 @@
       tags:
         - facts
 
+    - name: Preflight check for RHEL systems only
+      ansible.builtin.assert:
+        that:
+          - org_id is defined
+          - activationkey is defined
+        fail_msg: >
+          You need to specify org_id and activationkey as inventory variables
+          for RHEL machines
+        success_msg: Both org_id and activationkey defined, continuing...
+      when: ansible_distribution == "RedHat"
+
+    - name: Register with Red Hat if required
+      community.general.redhat_subscription:
+        activationkey: "{{ activationkey }}"
+        org_id: "{{ org_id }}"
+        state: present
+      when: ansible_distribution == "RedHat"
+
     - name: Copy over requirements.txt
       ansible.builtin.copy:
         src: requirements.txt
@@ -31,8 +49,28 @@
       ansible.builtin.command:
         dnf -y install python3-libdnf5
       when: ansible_pkg_mgr == "dnf5"
+      changed_when: false
 
-    - name: Install base packages
+    - name: Install EPEL on RHEL machine
+      ansible.builtin.include_role:
+        name: geerlingguy.repo-epel
+      when:
+        - ansible_distribution == "RedHat"
+
+    - name: Set crb repository name
+      ansible.builtin.set_fact:
+        crb_repo_name: "{{ 'codeready-builder-for-rhel-' +
+                   ansible_distribution_major_version|string +
+                   '-' +
+                   ansible_architecture +
+                   '-rpms' }}"
+
+    - name: Enable codeready-builder for RHEL
+      community.general.rhsm_repository:
+        name: "{{ crb_repo_name }}"
+      when: ansible_distribution == 'RedHat'
+
+    - name: Install base packages for Fedora
       ansible.builtin.dnf:
         name: "{{ item }}"
         state: installed
@@ -46,7 +84,29 @@
         - glibc-langpack-en
         - glibc-langpack-nl
         - wget2
-      when: "item not in ansible_facts.packages"
+      when:
+        - "item not in ansible_facts.packages"
+        - ansible_distribution == "Fedora"
+      tags:
+        - packages
+
+    - name: Install base packages for RHEL
+      ansible.builtin.dnf:
+        name: "{{ item }}"
+        state: installed
+      loop:
+        - git
+        - mc
+        - vim-enhanced
+        - python3
+        - python3-virtualenv
+        - glibc-langpack-en
+        - glibc-langpack-nl
+        - python3.12
+        - wget
+      when:
+        - "item not in ansible_facts.packages"
+        - ansible_distribution == "RedHat"
       tags:
         - packages
 
@@ -61,14 +121,6 @@
       when: "item in ansible_facts.packages"
       tags:
         - packages
-
-    - name: Create virtualenv for Ansible
-      ansible.builtin.shell:
-        cmd: . /usr/bin/virtualenvwrapper.sh && mkvirtualenv ansible
-        creates: "{{ ansible_user_dir }}/.virtualenvs/ansible"
-      become: false
-      tags:
-        - virtualenv
 
   roles:
     - role: fedora.linux_system_roles.timesync
@@ -87,6 +139,7 @@
         virtualenv_user: "{{ ansible_user_id }}"
         virtualenv_path: "{{ ansible_user_dir }}/.virtualenvs/ansible"
         virtualenv_requirements: "{{ ansible_user_dir }}/requirements.txt"
+        virtualenv_python: "{{ python_path | default(omit) }}"
       become: false
       tags:
         - pip

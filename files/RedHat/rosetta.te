@@ -1,0 +1,11 @@
+module rosetta 1.0;
+
+require {
+    type init_t;
+    type nfs_t;
+    class file { execute open read };
+}
+
+#============= init_t ==============
+
+allow init_t nfs_t:file { execute open read };

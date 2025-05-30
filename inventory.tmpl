@@ -1,7 +1,22 @@
+[rhel9]
+lima-rhel9
+
+[rhel9:vars]
+ansible_ssh_common_args=-F /Users/YOURUSERNAME/.lima/rhel9/ssh.config
+activationkey=YOURACTIVATIONKEY
+org_id=YOURORGANIZATION
+python_path=/usr/bin/python3.12
+
+[rhel10]
+lima-rhel10
+
+[rhel10:vars]
+ansible_ssh_common_args=-F /Users/YOURUSERNAME/.lima/rhel10/ssh.config
+activationkey=YOURACTIVATIONKEY
+org_id=YOURORGANIZATION
+
 [fedora]
-lima-fedora 
+lima-fedora
 
 [fedora:vars]
 ansible_ssh_common_args=-F /Users/YOURUSERNAME/.lima/fedora/ssh.config
-user=YOURUSERNAME
-
